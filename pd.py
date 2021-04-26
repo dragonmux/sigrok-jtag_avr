@@ -93,6 +93,19 @@ class PDIDecoder:
 
 	def __init__(self, decoder):
 		self.decoder = decoder
+		self.clearInsn()
+
+	def clearInsn(self):
+		self.insnRepCount = 0
+		self.insnOpcode = None
+		self.insnWrCounts = []
+		self.insnRdCounts = []
+		self.insnDataBytes = []
+		self.insnDataCount = 0
+		self.insnSSData = []
+		self.cmdSS = None
+		self.cmdInsnPartsNice = []
+		self.cmdInsnPartsTerse = []
 
 	def putb(self, bit, dir, value):
 		ann_class = PDIDecoder.ann_class[dir]
@@ -125,15 +138,221 @@ class PDIDecoder:
 			self.put_special(data, dir)
 		return data, parityOK
 
+	def handleLDS(self, sizeA, sizeB):
+		widthAddr = sizeA + 1
+		widthData = sizeB + 1
+		self.insnWrCounts = [widthAddr]
+		self.insnRdCounts = [widthData]
+		self.cmdInsnPartsNice = ['LDS']
+		self.cmdInsnPartsTerse = ['LDS']
+		return [
+			f'Insn: LDS a{widthAddr}, m{widthData}',
+			f'LDS a{widthAddr}, m{widthData}',
+			'LDS'
+		], widthAddr, widthData
+
+	def handleLD(self, sizeA, sizeB):
+		pointerText = (PDI.pointer_format_nice[sizeA], PDI.pointer_format_terse[sizeA])
+		widthData = sizeB + 1
+		self.insnWrCounts = []
+		self.insnRdCounts = [widthData]
+		if self.insnRepCount:
+			self.insnRdCounts.extend(self.insnRepCount * [widthData])
+			self.insnRepCount = 0
+		self.cmdInsnPartsNice = ['LD', pointerText[0]]
+		self.cmdInsnPartsTerse = ['LD', pointerText[1]]
+		return [
+			f'Insn: LD {pointerText[0]} m{widthData}',
+			f'LD {pointerText[0]} m{widthData}',
+			'LD'
+		], None, widthData
+
+	def handleSTS(self, sizeA, sizeB):
+		widthAddr = sizeA + 1
+		widthData = sizeB + 1
+		self.insnWrCounts = [widthAddr, widthData]
+		self.insnRdCounts = []
+		self.cmdInsnPartsNice = ['STS']
+		self.cmdInsnPartsTerse = ['STS']
+		return [
+			f'Insn: STS a{widthAddr}, i{widthData}',
+			f'STS a{widthAddr}, i{widthData}',
+			'STS'
+		], widthAddr, widthData
+
+	def handleST(self, sizeA, sizeB):
+		pointerText = (PDI.pointer_format_nice[sizeA], PDI.pointer_format_terse[sizeA])
+		widthData = sizeB + 1
+		self.insnWrCounts = [widthData]
+		self.insnRdCounts = []
+		if self.insnRepCount:
+			self.insnWrCounts.extend(self.insnRepCount * [widthData])
+			self.insnRepCount = 0
+		self.cmdInsnPartsNice = ['ST', pointerText[0]]
+		self.cmdInsnPartsTerse = ['ST', pointerText[1]]
+		return [
+			f'Insn: ST {pointerText[0]} i{widthData}',
+			f'ST {pointerText[0]} i{widthData}',
+			'ST'
+		], None, widthData
+
+	def handleLDCS(self, addr):
+		register = addr
+		registerText = (PDI.ctrl_reg_name.get(register, 'r{register}'), f'{register}')
+		self.insnWrCounts = []
+		self.insnRdCounts = [1]
+		self.cmdInsnPartsNice = ['LDCS', registerText[0]]
+		self.cmdInsnPartsTerse = ['LDCS', registerText[1]]
+		return [
+			f'Insn: LDCS {registerText[0]}, m1',
+			f'LDCS {registerText[0]}, m1',
+			'LDCS'
+		], None, None
+
+	def handleSTCS(self, addr):
+		register = addr
+		registerText = (PDI.ctrl_reg_name.get(register, 'r{register}'), f'{register}')
+		self.insnWrCounts = [1]
+		self.insnRdCounts = []
+		self.cmdInsnPartsNice = ['STCS', registerText[0]]
+		self.cmdInsnPartsTerse = ['STCS', registerText[1]]
+		return [
+			f'Insn: STCS {registerText[0]}, i1',
+			f'STCS {registerText[0]}, i1',
+			'STCS'
+		], None, None
+
+	def handleRepeat(self, sizeB):
+		widthData = sizeB + 1
+		self.insnWrCounts = [widthData]
+		self.insnRdCounts = []
+		self.cmdInsnPartsNice = ['REPEAT']
+		self.cmdInsnPartsTerse = ['REP']
+		return [
+			f'Insn: REPEAT i{widthData}',
+			f'REPEAT i{widthData}',
+			'REP'
+		], None, widthData
+
+	def handleKey(self):
+		widthData = 8
+		self.insnWrCounts = [widthData]
+		self.insnRdCounts = []
+		self.cmdInsnPartsNice = ['KEY']
+		self.cmdInsnPartsTerse = ['KEY']
+		return [
+			f'Insn: KEY i{widthData}',
+			f'KEY i{widthData}',
+			'KEY'
+		], None, widthData
+
+	def handleInsn(self, opcode, args):
+		sizeA = (args & 0x0C) >> 2
+		sizeB = args & 0x03
+		addr = args & 0x0F
+		if opcode == PDI.OP_LDS:
+			return self.handleLDS(sizeA, sizeB)
+		elif opcode == PDI.OP_LD:
+			return self.handleLD(sizeA, sizeB)
+		elif opcode == PDI.OP_STS:
+			return self.handleSTS(sizeA, sizeB)
+		elif opcode == PDI.OP_ST:
+			return self.handleST(sizeA, sizeB)
+		elif opcode == PDI.OP_LDCS:
+			return self.handleLDCS(addr)
+		elif opcode == PDI.OP_STCS:
+			return self.handleSTCS(addr)
+		elif opcode == PDI.OP_REPEAT:
+			return self.handleRepeat(sizeB)
+		elif opcode == PDI.OP_KEY:
+			return self.handleKey()
+
+	def handleData(self, data, dir):
+		if dir == A.DATA_IN and not self.insnWrCounts:
+			self.decoder.putx([A.DATA_PROG, ['DUMMY', 'DMY', 'D']])
+			return
+		elif dir == A.DATA_OUT and not self.insnRdCounts:
+			return
+
+		decoder = self.decoder
+		if self.insnDataCount:
+			if not self.insnDataBytes:
+				self.insnSSData = decoder.ss
+			self.insnDataBytes.append(data)
+			self.insnDataCount -= 1
+			if self.insnDataCount:
+				return
+
+			dataSS = self.insnSSData
+			dataES = decoder.es
+			if self.insnWrCounts:
+				dataAnn = A.DATA_PROG
+				dataWidth = self.insnWrCounts.pop(0)
+			elif self.insnRdCounts:
+				dataAnn = A.DATA_DEV
+				dataWidth = self.insnRdCounts.pop(0)
+
+			self.insnDataBytes.reverse()
+			dataTextDigits = ''.join((f'{b:02x}' for b in self.insnDataBytes))
+			dataTextHex = f'0x{dataTextDigits}'
+			dataTextPrefix = f'Data: {dataTextHex}'
+			self.insnDataBytes = []
+			decoder.put(dataSS, dataES, decoder.out_ann, [dataAnn, [dataTextPrefix, dataTextHex, dataTextDigits]])
+
+			if self.insnWrCounts:
+				self.insnDataCount = self.insnWrCounts[0]
+				return
+			elif self.insnRdCounts:
+				self.insnDataCount = self.insnRdCounts[0]
+				return
+
+		cmdES = decoder.es
+		cmdTextNice = ' '.join(self.cmdInsnPartsNice)
+		cmdTextTerse = ' '.join(self.cmdInsnPartsTerse)
+		decoder.put(self.cmdSS, cmdES, decoder.out_ann, [A.COMMAND, [cmdTextNice, cmdTextTerse]])
+		if self.insnOpcode == PDI.OP_REPEAT:
+			count = int(self.cmdInsnPartsNice[-1], 0)
+			self.insnRepCount = count
+
+		saveRepCount = self.insnRepCount
+		self.clearInsn()
+		self.insnRepCount = saveRepCount
+
 	def handleInput(self, value):
 		data, parityOK = self.checkParity(value, A.DATA_IN)
-		if not parityOK:
+		isBreak = not parityOK and data == 0xBB
+		if not parityOK and not isBreak:
 			return
+		elif isBreak:
+			saveRepCount = self.insnRepCount
+			self.clearInsn()
+			self.insnRepCount = saveRepCount
+			return
+
+		decoder = self.decoder
+		if self.insnOpcode is None:
+			opcode = (data & 0xE0) >> 5
+			self.insnOpcode = opcode
+			self.cmdSS = decoder.ss
+			mnemonics, widthAddr, widthData = self.handleInsn(opcode, data & 0x0F)
+			decoder.putx([A.OPCODE, mnemonics])
+
+			self.insnDataBytes = []
+			if self.insnWrCounts:
+				self.insnDataCount = self.insnWrCounts[0]
+				return
+			elif self.insnRdCounts:
+				self.insnDataCount = self.insnRdCounts[0]
+				return
+
+		self.handleData(data, A.DATA_IN)
 
 	def handleOutput(self, value):
 		data, parityOK = self.checkParity(value, A.DATA_OUT)
 		if not parityOK:
 			return
+
+		self.handleData(data, A.DATA_OUT)
 
 class Decoder(srd.Decoder):
 	api_version = 3
@@ -173,8 +392,8 @@ class Decoder(srd.Decoder):
 		('data_in', 'PDI Data (In)', (A.DATA_IN, A.PARITY_IN_OK, A.PARITY_IN_ERR)),
 		('data_out', 'PDI Data (Out)', (A.DATA_OUT, A.PARITY_OUT_OK, A.PARITY_OUT_ERR)),
 		('data_fields', 'PDI Data Fields', (A.BREAK,)),
-		('pdi_fields', 'PDI Fields', (A.OPCODE, A.PDI_BREAK)),
-		('pdi_prog', 'PDI Programmer In', (A.DATA_PROG,)),
+		('pdi_fields', 'PDI Fields', (A.PDI_BREAK,)),
+		('pdi_prog', 'PDI Programmer In', (A.OPCODE, A.DATA_PROG,)),
 		('pdi_dev', 'PDI Device Out', (A.DATA_DEV,)),
 		('pdi_cmds', 'PDI Commands', (A.ENABLE, A.DISABLE, A.COMMAND)),
 	)
