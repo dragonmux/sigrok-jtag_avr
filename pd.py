@@ -311,7 +311,7 @@ class PDIDecoder:
 		cmdTextTerse = ' '.join(self.cmdInsnPartsTerse)
 		decoder.put(self.cmdSS, cmdES, decoder.out_ann, [A.COMMAND, [cmdTextNice, cmdTextTerse]])
 		if self.insnOpcode == PDI.OP_REPEAT:
-			count = int(self.cmdInsnPartsNice[-1], 0)
+			count = int(dataTextDigits, 16)
 			self.insnRepCount = count
 
 		saveRepCount = self.insnRepCount
