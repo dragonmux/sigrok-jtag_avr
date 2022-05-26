@@ -198,7 +198,7 @@ class PDIDecoder:
 
 	def handleLDCS(self, addr):
 		register = addr
-		registerText = (PDI.ctrl_reg_name.get(register, 'r{register}'), f'{register}')
+		registerText = (PDI.ctrl_reg_name.get(register, f'r{register}'), f'{register}')
 		self.insnWrCounts = []
 		self.insnRdCounts = [1]
 		self.cmdInsnPartsNice = ['LDCS', registerText[0]]
@@ -211,7 +211,7 @@ class PDIDecoder:
 
 	def handleSTCS(self, addr):
 		register = addr
-		registerText = (PDI.ctrl_reg_name.get(register, 'r{register}'), f'{register}')
+		registerText = (PDI.ctrl_reg_name.get(register, f'r{register}'), f'{register}')
 		self.insnWrCounts = [1]
 		self.insnRdCounts = []
 		self.cmdInsnPartsNice = ['STCS', registerText[0]]
