@@ -91,7 +91,7 @@ class PDIDecoder:
 		0xEB: 'EMPTY',
 	}
 
-	def __init__(self, decoder):
+	def __init__(self, decoder: 'Decoder'):
 		self.decoder = decoder
 		self.clearInsn()
 
@@ -399,14 +399,15 @@ class Decoder(srd.Decoder):
 	)
 
 	def __init__(self):
-		self.reset()
 		self.pdi = PDIDecoder(self)
 
 	def reset(self):
 		self.state = 'IDLE'
 		self.samplenums = None
+		self.pdi.clearInsn()
 
 	def start(self):
+		self.reset()
 		self.out_ann = self.register(srd.OUTPUT_ANN)
 
 	def putx(self, data):
